@@ -1,5 +1,6 @@
 package com.mcpifm.test;
 
+import android.media.audiofx.AudioEffect;
 import android.media.audiofx.DynamicsProcessing;
 
 import java.text.SimpleDateFormat;
@@ -24,6 +25,8 @@ final class Engine {
     static volatile int mode = MODE_OFF;
     static volatile boolean eqServiceRunning = false;
     static volatile String globalStatus = "Not tried yet";
+    static volatile boolean globalWanted = false;
+    static volatile int reattachCount = 0;
 
     static volatile boolean captureRunning = false;
     static volatile String captureStatus = "Not started";
@@ -58,8 +61,10 @@ final class Engine {
         }
         StringBuilder sb = new StringBuilder();
         for (Map.Entry<Integer, String> e : owners.entrySet()) {
+            DynamicsProcessing dp = effects.get(e.getKey());
             sb.append("• session ").append(e.getKey()).append("  ")
-              .append(e.getValue() == null ? "(unknown app)" : e.getValue()).append('\n');
+              .append(e.getValue() == null ? "(unknown app)" : e.getValue())
+              .append("  · control: ").append(hasControl(dp) ? "yes" : "NO").append('\n');
         }
         return sb.toString().trim();
     }
@@ -79,6 +84,13 @@ final class Engine {
                     true        // limiter
             ).build();
             DynamicsProcessing dp = new DynamicsProcessing(Integer.MAX_VALUE, session, cfg);
+            final int sid = session;
+            dp.setControlStatusListener(new AudioEffect.OnControlStatusChangeListener() {
+                @Override
+                public void onControlStatusChange(AudioEffect effect, boolean controlGranted) {
+                    log("Session " + sid + (controlGranted ? ": control regained" : ": control LOST to another effect"));
+                }
+            });
             effects.put(session, dp);
             owners.put(session, owner);
             apply(dp);
@@ -105,6 +117,28 @@ final class Engine {
                 // already released by the system
             }
             log("Released session " + session + (owner == null ? "" : " (" + owner + ")"));
+        }
+    }
+
+    static synchronized boolean globalHealthy() {
+        return hasControl(effects.get(0));
+    }
+
+    static synchronized void reattachGlobal(String why) {
+        reattachCount++;
+        log("Re-attaching global output (" + why + ")");
+        detach(0);
+        attach(0, "GLOBAL OUTPUT");
+    }
+
+    private static boolean hasControl(DynamicsProcessing dp) {
+        if (dp == null) {
+            return false;
+        }
+        try {
+            return dp.hasControl();
+        } catch (Throwable t) {
+            return false;
         }
     }
 

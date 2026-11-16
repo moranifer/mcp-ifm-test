@@ -10,10 +10,13 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.projection.MediaProjectionManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -100,6 +103,9 @@ public class MainActivity extends Activity {
         modeButtons.add(modeButton(rowM, "OFF", Engine.MODE_OFF));
         modeButtons.add(modeButton(rowM, "BASS TEST", Engine.MODE_BASS));
         modeButtons.add(modeButton(rowM, "LOUD +6", Engine.MODE_LOUD));
+        LinearLayout rowX = row(a);
+        rowX.addView(button("Re-attach now", v -> Engine.reattachGlobal("button")));
+        rowX.addView(button("Battery: no limits", v -> askBatteryExemption()));
         eqStatus = label("", 14, TEXT, false);
         a.addView(eqStatus);
         sessions = label("", 14, TEXT, false);
@@ -192,8 +198,13 @@ public class MainActivity extends Activity {
     }
 
     private void updateViews() {
+        PowerManager pm = getSystemService(PowerManager.class);
+        boolean free = pm.isIgnoringBatteryOptimizations(getPackageName());
         eqStatus.setText("Service: " + (Engine.eqServiceRunning ? "running" : "stopped")
+                + "\nBattery limits: " + (free ? "off (good)" : "ON, press Battery: no limits")
                 + "\nGlobal output: " + Engine.globalStatus
+                + (Engine.globalWanted ? (Engine.globalHealthy() ? " · active" : " · INACTIVE") : "")
+                + "\nAutomatic re-attaches: " + Engine.reattachCount
                 + "\nMode: " + Engine.modeName(Engine.mode));
         sessions.setText("Sessions with the effect:\n" + Engine.sessionsText());
         for (Button b : modeButtons) {
@@ -219,6 +230,16 @@ public class MainActivity extends Activity {
         Intent i = new Intent(this, EqService.class);
         i.putExtra(EqService.EXTRA_GLOBAL, global);
         startForegroundService(i);
+    }
+
+    private void askBatteryExemption() {
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            i.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Throwable t) {
+            Toast.makeText(this, "Open Settings › Apps › MCP-ifm Test › Battery › Unrestricted", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void startCapture() {
@@ -263,7 +284,7 @@ public class MainActivity extends Activity {
     }
 
     private String deviceLine() {
-        return Build.MANUFACTURER + " " + Build.MODEL + " · Android " + Build.VERSION.RELEASE
+        return "v0.2 · " + Build.MANUFACTURER + " " + Build.MODEL + " · Android " + Build.VERSION.RELEASE
                 + " (SDK " + Build.VERSION.SDK_INT + ")";
     }
 
